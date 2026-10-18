@@ -112,13 +112,13 @@ export default class SodamLyricsExtension extends Extension {
             return Clutter.EVENT_STOP;
         });
 
-        this._prevButton = this._buildButton('media-skip-backward-symbolic',
+        this._prevButton = this._buildButton('skip-back.svg',
             () => this._callMpris('Previous'));
-        this._playButton = this._buildButton('media-playback-start-symbolic',
+        this._playButton = this._buildButton('play.svg',
             () => this._callMpris('PlayPause'));
-        this._nextButton = this._buildButton('media-skip-forward-symbolic',
+        this._nextButton = this._buildButton('skip-forward.svg',
             () => this._callMpris('Next'));
-        this._likeButton = this._buildButton('emblem-favorite-symbolic',
+        this._likeButton = this._buildButton('heart.svg',
             () => this._callLyrics('ToggleLiked'));
 
         pill.add_child(this._info);
@@ -131,9 +131,14 @@ export default class SodamLyricsExtension extends Extension {
         Main.panel.addToStatusArea('sodam-lyrics', this._indicator, 1, 'left');
     }
 
-    _buildButton(iconName, onClick) {
+    /// 按钮图标用 SodaM 主界面同一套 Lucide 图形，保证形状一致。
+    _iconFile(name) {
+        return Gio.File.new_for_path(GLib.build_filenamev([this.path, 'icons', name]));
+    }
+
+    _buildButton(iconFile, onClick) {
         const icon = new St.Icon({
-            icon_name: iconName,
+            gicon: new Gio.FileIcon({file: this._iconFile(iconFile)}),
             icon_size: 16,
             style_class: 'sodam-lyrics-button-icon',
         });
@@ -330,10 +335,11 @@ export default class SodamLyricsExtension extends Extension {
             }
         }
 
-        this._playButton.child.icon_name = this._state.playing
-            ? 'media-playback-pause-symbolic'
-            : 'media-playback-start-symbolic';
-        this._likeButton?.child.set_style_class_name(
-            this._state.liked ? 'sodam-lyrics-liked' : '');
+        this._playButton.child.gicon = new Gio.FileIcon({
+            file: this._iconFile(this._state.playing ? 'pause.svg' : 'play.svg'),
+        });
+        this._likeButton.child.gicon = new Gio.FileIcon({
+            file: this._iconFile(this._state.liked ? 'heart-filled.svg' : 'heart.svg'),
+        });
     }
 }

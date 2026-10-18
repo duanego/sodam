@@ -109,11 +109,8 @@ fn lyrics_button(
         .justify_center()
         .w(px(BUTTON_WIDTH))
         .h(px(STRIP_HEIGHT))
-        .bg(if active {
-            theme::accent()
-        } else {
-            gpui::rgba(0x00000000)
-        })
+        // 非激活态不能设透明背景：gpui 会把它画成黑色方块。
+        .when(active, |this| this.bg(theme::accent()))
         .hover(move |style| {
             style.bg(if active {
                 theme::accent()

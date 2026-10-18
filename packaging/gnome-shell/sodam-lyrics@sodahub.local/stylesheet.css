@@ -1,10 +1,7 @@
-/* 复刻汽水音乐任务栏歌词条：浅色圆角胶囊 + 深色文字。 */
+/* 透明胶囊：颜色跟随顶栏主题，不额外加底色。 */
 .sodam-lyrics-pill {
-  background-color: rgba(246, 241, 238, 0.97);
-  border-radius: 13px;
-  padding: 0 10px;
   spacing: 10px;
-  margin: 2px 6px;
+  padding: 0 8px;
 }
 
 .sodam-lyrics-info {
@@ -14,7 +11,7 @@
 }
 
 .sodam-lyrics-info:hover {
-  background-color: rgba(0, 0, 0, 0.06);
+  background-color: rgba(255, 255, 255, 0.12);
 }
 
 .sodam-lyrics-cover {
@@ -22,31 +19,25 @@
 }
 
 .sodam-lyrics-title {
-  color: #1b1b1d;
   font-weight: 700;
   font-size: 13px;
 }
 
 .sodam-lyrics-line {
-  color: #6b6b70;
   font-size: 13px;
+  opacity: 0.78;
   max-width: 320px;
 }
 
 .sodam-lyrics-button {
-  color: #2a2a2e;
   border-radius: 999px;
   padding: 3px;
 }
 
 .sodam-lyrics-button:hover {
-  background-color: rgba(0, 0, 0, 0.08);
+  background-color: rgba(255, 255, 255, 0.14);
 }
 
 .sodam-lyrics-button:active {
-  background-color: rgba(0, 0, 0, 0.16);
-}
-
-.sodam-lyrics-liked {
-  color: #e4005a;
+  background-color: rgba(255, 255, 255, 0.22);
 }
