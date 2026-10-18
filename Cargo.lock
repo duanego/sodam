@@ -6125,6 +6125,7 @@ dependencies = [
  "tokio",
  "tray-icon",
  "winresource",
+ "zbus",
 ]
 
 [[package]]

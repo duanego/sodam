@@ -1,0 +1,47 @@
+/* 顶栏内嵌的歌词 pill：紧凑一行，跟随顶栏高度。 */
+.sodam-lyrics-pill {
+  spacing: 4px;
+  padding: 0 6px;
+}
+
+.sodam-lyrics-info {
+  spacing: 6px;
+  padding: 2px 4px;
+  border-radius: 6px;
+}
+
+.sodam-lyrics-info:hover {
+  background-color: rgba(255, 255, 255, 0.12);
+}
+
+.sodam-lyrics-cover {
+  border-radius: 4px;
+}
+
+.sodam-lyrics-title {
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.sodam-lyrics-line {
+  font-size: 12px;
+  opacity: 0.75;
+  max-width: 320px;
+}
+
+.sodam-lyrics-button {
+  border-radius: 999px;
+  padding: 3px;
+}
+
+.sodam-lyrics-button:hover {
+  background-color: rgba(255, 255, 255, 0.14);
+}
+
+.sodam-lyrics-button:active {
+  background-color: rgba(255, 255, 255, 0.22);
+}
+
+.sodam-lyrics-liked {
+  color: #ff4d8d;
+}

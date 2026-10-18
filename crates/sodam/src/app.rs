@@ -215,6 +215,8 @@ pub struct Root {
     pub loading_lyrics: bool,
     pub lyrics_error: Option<String>,
     pub lyrics_active: Option<usize>,
+    /// 桌面歌词条是否显示（标题栏开关控制，扩展读取）。
+    pub desktop_lyrics_visible: bool,
     pub lyrics_scroll: gpui::UniformListScrollHandle,
     /// 防止快速换歌时旧歌词请求回写。
     lyrics_request_seq: u64,
@@ -441,6 +443,7 @@ impl Root {
             loading_lyrics: false,
             lyrics_error: None,
             lyrics_active: None,
+            desktop_lyrics_visible: true,
             lyrics_scroll: gpui::UniformListScrollHandle::new(),
             lyrics_request_seq: 0,
             search_input: String::new(),
@@ -985,7 +988,17 @@ impl Render for Root {
             // 标题栏覆盖在各面板背景之上；不再单独占一行而截断侧栏底色。
             // 放在普通内容之后、弹层之前，控制按钮可点击，弹层仍能覆盖标题栏。
             .when(own_titlebar, |this| {
-                this.child(ui::titlebar::render(window))
+                let root = cx.entity();
+                this.child(ui::titlebar::render(
+                    window,
+                    self.desktop_lyrics_visible,
+                    move |_window, cx| {
+                        root.update(cx, |root, cx| {
+                            root.desktop_lyrics_visible = !root.desktop_lyrics_visible;
+                            cx.notify();
+                        });
+                    },
+                ))
             })
             .when(self.track_menu.is_some(), |this| {
                 this.child(crate::views::track_menu(self, cx))

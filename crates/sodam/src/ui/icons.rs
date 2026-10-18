@@ -131,6 +131,7 @@ icon_set!(
     "minus",
     "square",
     "restore",
+    "captions",
     "disc-3",
     "check",
 );

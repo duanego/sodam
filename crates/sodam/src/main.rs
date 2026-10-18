@@ -108,6 +108,15 @@ fn start_tray_service(
                             media::Command::Toggle => root.toggle_play(cx),
                             media::Command::Next => root.next_track(cx),
                             media::Command::Previous => root.prev_track(cx),
+                            media::Command::SetBarVisible(visible) => {
+                                root.desktop_lyrics_visible = visible;
+                                cx.notify();
+                            }
+                            media::Command::ToggleLike => {
+                                if let Some(track) = root.queue.current().cloned() {
+                                    root.toggle_like(track, cx);
+                                }
+                            }
                             _ => {}
                         }
                     })
@@ -161,6 +170,31 @@ fn start_tray_service(
                             duration_seconds: snapshot.duration_seconds,
                             position_seconds: snapshot.position_seconds,
                             playing: snapshot.playing,
+                            // 没有曲目时必须清空，否则停止播放后歌词接口会残留上一首，
+                            // 和已经清空的 MPRIS 元数据对不上。
+                            lyric_current: if snapshot.track_id.is_empty() {
+                                String::new()
+                            } else {
+                                root.lyrics_active
+                                    .and_then(|index| root.lyrics.get(index))
+                                    .or_else(|| root.lyrics.first())
+                                    .map(|line| line.text.clone())
+                                    .unwrap_or_default()
+                            },
+                            lyric_next: if snapshot.track_id.is_empty() {
+                                String::new()
+                            } else {
+                                root.lyrics_active
+                                    .map(|index| index + 1)
+                                    .and_then(|index| root.lyrics.get(index))
+                                    .map(|line| line.text.clone())
+                                    .unwrap_or_default()
+                            },
+                            has_lyrics: !snapshot.track_id.is_empty() && !root.lyrics.is_empty(),
+                            liked: track
+                                .map(|track| root.liked_ids.contains(&track.id))
+                                .unwrap_or(false),
+                            lyrics_visible: root.desktop_lyrics_visible,
                         }
                     })
                 });

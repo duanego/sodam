@@ -14,7 +14,7 @@
 //! macOS 走系统红绿灯，不使用本组件。
 
 use gpui::prelude::*;
-use gpui::{div, hsla, px, svg, Div, Hsla, MouseButton, Window, WindowControlArea};
+use gpui::{div, hsla, px, svg, App, Div, Hsla, MouseButton, Window, WindowControlArea};
 
 use crate::ui::{icons, theme};
 
@@ -30,7 +30,11 @@ const CLOSE_HOVER: Hsla = hsla(4.0 / 360.0, 0.83, 0.49, 1.0);
 /// 覆盖在窗口顶部，不占布局高度：侧边栏/内容列各自为控件留出空间，
 /// 背景仍延伸到标题栏下方，避免独立标题栏横条与面板之间出现色差。
 /// 左侧全部为拖拽区，右侧是三个窗口控制按钮。
-pub fn render(window: &Window) -> Div {
+pub fn render(
+    window: &Window,
+    lyrics_visible: bool,
+    on_toggle_lyrics: impl Fn(&mut Window, &mut App) + 'static,
+) -> Div {
     // 最大化后按钮换成「还原」图标，和系统窗口的语义一致。
     let maximize_icon = if window.is_maximized() {
         "restore"
@@ -48,6 +52,10 @@ pub fn render(window: &Window) -> Div {
         .h(px(STRIP_HEIGHT))
         .flex_none()
         .child(drag_area())
+        // 桌面歌词开关：放在最小化左边，对应汽水音乐原生客户端的同一位置。
+        .when(cfg!(target_os = "linux"), |this| {
+            this.child(lyrics_button(lyrics_visible, on_toggle_lyrics))
+        })
         .child(caption_button(
             "titlebar-min",
             "minus",
@@ -87,6 +95,32 @@ fn drag_area() -> impl IntoElement {
     });
 
     area
+}
+
+/// 桌面歌词开关：点亮表示歌词条正在显示。
+fn lyrics_button(
+    active: bool,
+    on_toggle: impl Fn(&mut Window, &mut App) + 'static,
+) -> impl IntoElement {
+    div()
+        .id("titlebar-lyrics")
+        .flex()
+        .items_center()
+        .justify_center()
+        .w(px(BUTTON_WIDTH))
+        .h(px(STRIP_HEIGHT))
+        .hover(|style| style.bg(theme::surface_hover()))
+        .child(
+            svg()
+                .path(icons::path("captions"))
+                .size(px(GLYPH_SIZE))
+                .text_color(if active {
+                    theme::accent()
+                } else {
+                    theme::text_muted()
+                }),
+        )
+        .on_click(move |_, window, cx| on_toggle(window, cx))
 }
 
 fn caption_button(

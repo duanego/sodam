@@ -39,6 +39,10 @@ pub enum Command {
     Toggle,
     Next,
     Previous,
+    /// 桌面歌词扩展点收藏按钮时发来。
+    ToggleLike,
+    /// 桌面歌词条显隐（标题栏开关或扩展发来）。
+    SetBarVisible(bool),
 }
 
 /// 要发布给系统的播放状态。
@@ -56,6 +60,15 @@ pub struct NowPlaying {
     pub duration_seconds: f64,
     pub position_seconds: f64,
     pub playing: bool,
+    /// 当前歌词行与下一行，供桌面歌词扩展读取。
+    pub lyric_current: String,
+    pub lyric_next: String,
+    /// 当前曲目是否有歌词。
+    pub has_lyrics: bool,
+    /// 当前曲目是否已收藏。
+    pub liked: bool,
+    /// 桌面歌词条是否显示。
+    pub lyrics_visible: bool,
 }
 
 impl NowPlaying {
@@ -164,4 +177,14 @@ pub fn publish(cx: &App, now: &NowPlaying) {
         media.controls.publish_playback(now);
     }
     media.last_position = now.position_seconds;
+
+    // 歌词走独立的 D-Bus 接口（MPRIS 没有歌词字段），只在 Linux 上提供。
+    #[cfg(target_os = "linux")]
+    media.controls.publish_lyrics(mpris::LyricsState {
+        current: now.lyric_current.clone(),
+        next: now.lyric_next.clone(),
+        has_lyrics: now.has_lyrics,
+        liked: now.liked,
+        visible: now.lyrics_visible,
+    });
 }
