@@ -101,7 +101,13 @@ export default class SodamLyricsExtension extends Extension {
             text: '',
             y_align: Clutter.ActorAlign.CENTER,
         });
-        this._info.add_child(this._cover);
+        this._coverBin = new St.Bin({
+            style_class: 'sodam-lyrics-cover-bin',
+            clip_to_allocation: true,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._coverBin.set_child(this._cover);
+        this._info.add_child(this._coverBin);
         this._info.add_child(this._titleLabel);
         this._info.add_child(this._lyricLabel);
         // 单击唤起主窗口；按住拖动则跟随指针，松手按离哪边近贴哪边。
@@ -154,50 +160,66 @@ export default class SodamLyricsExtension extends Extension {
     // ── 拖动吸附 ────────────────────────────────────────────────────────────
 
     _beginDrag(startX) {
+        if (this._drag)
+            return;
         this._drag = {startX, moved: false, translation: 0};
-        this._captureId = global.stage.connect('captured-event', (stage, event) => {
-            if (!this._drag)
-                return Clutter.EVENT_PROPAGATE;
-            const type = event.type();
-            if (type === Clutter.EventType.MOTION) {
-                const dx = event.get_coords()[0] - this._drag.startX;
-                if (Math.abs(dx) > 6) {
-                    this._drag.moved = true;
-                    this._drag.translation = dx;
-                    this._indicator.translation_x = dx;
-                }
-                return this._drag.moved ? Clutter.EVENT_STOP : Clutter.EVENT_PROPAGATE;
-            }
-            if (type === Clutter.EventType.BUTTON_RELEASE) {
-                global.stage.disconnect(this._captureId);
-                this._captureId = 0;
-                const drag = this._drag;
-                this._drag = null;
-                this._indicator.translation_x = 0;
-                if (drag.moved)
-                    this._snap(drag.translation);
-                else
-                    this._openSodaM();
-                return Clutter.EVENT_STOP;
-            }
-            return Clutter.EVENT_PROPAGATE;
-        });
+        this._captureId = global.stage.connect(
+            'captured-event', this._onCaptured.bind(this));
     }
 
-    /// 松手后按距离屏幕左右边决定贴哪一侧的顶栏区域。
-    _snap(translation) {
-        const monitor = Main.layoutManager.primaryMonitor;
-        const [baseX] = this._indicator.get_transformed_position();
-        const centerX = baseX + translation + this._indicator.width / 2;
-        const toRight = centerX > monitor.x + monitor.width / 2;
-        const parent = this._indicator.get_parent();
-        if (parent)
-            parent.remove_child(this._indicator);
-        const panel = Main.panel;
-        if (toRight)
-            panel._rightBox.insert_child_at_index(this._indicator, 0);
+    _onCaptured(_stage, event) {
+        if (!this._drag)
+            return Clutter.EVENT_PROPAGATE;
+        const type = event.type();
+        if (type === Clutter.EventType.MOTION) {
+            const dx = event.get_coords()[0] - this._drag.startX;
+            if (Math.abs(dx) > 6) {
+                this._drag.moved = true;
+                this._drag.translation = dx;
+                this._indicator.translation_x = dx;
+            }
+            return this._drag.moved ? Clutter.EVENT_STOP : Clutter.EVENT_PROPAGATE;
+        }
+        if (type === Clutter.EventType.BUTTON_RELEASE) {
+            this._endDrag();
+            return Clutter.EVENT_STOP;
+        }
+        return Clutter.EVENT_PROPAGATE;
+    }
+
+    _endDrag() {
+        if (this._captureId) {
+            global.stage.disconnect(this._captureId);
+            this._captureId = 0;
+        }
+        const drag = this._drag;
+        this._drag = null;
+        if (this._indicator)
+            this._indicator.translation_x = 0;
+        if (!drag)
+            return;
+        if (drag.moved)
+            this._snap(drag.translation);
         else
-            panel._leftBox.insert_child_at_index(this._indicator, 1);
+            this._openSodaM();
+    }
+
+    /// 松手后按离屏幕左右边的距离贴到对应一侧；失败也不留下卡住的位移。
+    _snap(translation) {
+        try {
+            const monitor = Main.layoutManager.primaryMonitor;
+            const [baseX] = this._indicator.get_transformed_position();
+            const centerX = baseX + translation + this._indicator.width / 2;
+            const toRight = centerX > monitor.x + monitor.width / 2;
+            const parent = this._indicator.get_parent();
+            if (parent)
+                parent.remove_child(this._indicator);
+            const panel = Main.panel;
+            const box = toRight ? panel._rightBox : panel._leftBox;
+            box.insert_child_at_index(this._indicator, toRight ? 0 : 1);
+        } catch (e) {
+            console.warn('[sodam-lyrics] snap failed:', e);
+        }
     }
 
     _openSodaM() {

@@ -109,24 +109,33 @@ fn lyrics_button(
         .justify_center()
         .w(px(BUTTON_WIDTH))
         .h(px(STRIP_HEIGHT))
-        // 非激活态不能设透明背景：gpui 会把它画成黑色方块。
-        .when(active, |this| this.bg(theme::accent()))
         .hover(move |style| {
-            style.bg(if active {
-                theme::accent()
+            if active {
+                style
             } else {
-                theme::surface_hover()
-            })
+                style.bg(theme::surface_hover())
+            }
         })
+        // 背景只包住图标本身：整格铺满会变成一个黑色方块。
         .child(
-            svg()
-                .path(icons::path("captions"))
-                .size(px(GLYPH_SIZE))
-                .text_color(if active {
-                    theme::text()
-                } else {
-                    theme::text_muted()
-                }),
+            div()
+                .flex()
+                .items_center()
+                .justify_center()
+                .w(px(28.0))
+                .h(px(24.0))
+                .rounded(px(7.0))
+                .when(active, |this| this.bg(theme::accent()))
+                .child(
+                    svg()
+                        .path(icons::path("captions"))
+                        .size(px(GLYPH_SIZE))
+                        .text_color(if active {
+                            theme::text()
+                        } else {
+                            theme::text_muted()
+                        }),
+                ),
         )
         .on_click(move |_, window, cx| on_toggle(window, cx))
 }
