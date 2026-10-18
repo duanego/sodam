@@ -131,7 +131,7 @@ fn lyrics_button(
                         .path(icons::path("captions"))
                         .size(px(GLYPH_SIZE))
                         .text_color(if active {
-                            theme::text()
+                            theme::accent_foreground()
                         } else {
                             theme::text_muted()
                         }),
