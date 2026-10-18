@@ -1,47 +1,52 @@
-/* 顶栏内嵌的歌词 pill：紧凑一行，跟随顶栏高度。 */
+/* 复刻汽水音乐任务栏歌词条：浅色圆角胶囊 + 深色文字。 */
 .sodam-lyrics-pill {
-  spacing: 4px;
-  padding: 0 6px;
+  background-color: rgba(246, 241, 238, 0.97);
+  border-radius: 13px;
+  padding: 0 10px;
+  spacing: 10px;
+  margin: 2px 6px;
 }
 
 .sodam-lyrics-info {
-  spacing: 6px;
-  padding: 2px 4px;
-  border-radius: 6px;
+  spacing: 8px;
+  padding: 2px 2px;
+  border-radius: 8px;
 }
 
 .sodam-lyrics-info:hover {
-  background-color: rgba(255, 255, 255, 0.12);
+  background-color: rgba(0, 0, 0, 0.06);
 }
 
 .sodam-lyrics-cover {
-  border-radius: 4px;
+  border-radius: 6px;
 }
 
 .sodam-lyrics-title {
+  color: #1b1b1d;
   font-weight: 700;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .sodam-lyrics-line {
-  font-size: 12px;
-  opacity: 0.75;
+  color: #6b6b70;
+  font-size: 13px;
   max-width: 320px;
 }
 
 .sodam-lyrics-button {
+  color: #2a2a2e;
   border-radius: 999px;
   padding: 3px;
 }
 
 .sodam-lyrics-button:hover {
-  background-color: rgba(255, 255, 255, 0.14);
+  background-color: rgba(0, 0, 0, 0.08);
 }
 
 .sodam-lyrics-button:active {
-  background-color: rgba(255, 255, 255, 0.22);
+  background-color: rgba(0, 0, 0, 0.16);
 }
 
 .sodam-lyrics-liked {
-  color: #ff4d8d;
+  color: #e4005a;
 }

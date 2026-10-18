@@ -97,7 +97,7 @@ fn drag_area() -> impl IntoElement {
     area
 }
 
-/// 桌面歌词开关：点亮表示歌词条正在显示。
+/// 桌面歌词开关：开启时整块填充强调色、图标反白；关闭时只有灰色线条。
 fn lyrics_button(
     active: bool,
     on_toggle: impl Fn(&mut Window, &mut App) + 'static,
@@ -109,13 +109,24 @@ fn lyrics_button(
         .justify_center()
         .w(px(BUTTON_WIDTH))
         .h(px(STRIP_HEIGHT))
-        .hover(|style| style.bg(theme::surface_hover()))
+        .bg(if active {
+            theme::accent()
+        } else {
+            gpui::rgba(0x00000000)
+        })
+        .hover(move |style| {
+            style.bg(if active {
+                theme::accent()
+            } else {
+                theme::surface_hover()
+            })
+        })
         .child(
             svg()
                 .path(icons::path("captions"))
                 .size(px(GLYPH_SIZE))
                 .text_color(if active {
-                    theme::accent()
+                    theme::text()
                 } else {
                     theme::text_muted()
                 }),

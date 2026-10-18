@@ -52,13 +52,19 @@ impl LyricsInterface {
     /// 当前正在唱的一句。
     #[zbus(property)]
     fn current_line(&self) -> String {
-        self.state.lock().map(|s| s.current.clone()).unwrap_or_default()
+        self.state
+            .lock()
+            .map(|s| s.current.clone())
+            .unwrap_or_default()
     }
 
     /// 下一句，用于提前淡入；没有就是空串。
     #[zbus(property)]
     fn next_line(&self) -> String {
-        self.state.lock().map(|s| s.next.clone()).unwrap_or_default()
+        self.state
+            .lock()
+            .map(|s| s.next.clone())
+            .unwrap_or_default()
     }
 
     /// 当前曲目是否有歌词（区分「加载中」与「没有歌词」）。
@@ -108,7 +114,10 @@ impl LyricsPublisher {
                 .and_then(|builder| {
                     builder.serve_at(
                         LYRICS_PATH,
-                        LyricsInterface { state: interface_state, commands: commands.clone() },
+                        LyricsInterface {
+                            state: interface_state,
+                            commands: commands.clone(),
+                        },
                     )
                 });
             let connection = match connection {
@@ -134,7 +143,9 @@ impl LyricsPublisher {
             };
             while let Some(next) = receiver.recv().await {
                 {
-                    let Ok(mut current) = state.lock() else { continue };
+                    let Ok(mut current) = state.lock() else {
+                        continue;
+                    };
                     if *current == next {
                         continue;
                     }

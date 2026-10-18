@@ -51,6 +51,11 @@ export default class SodamLyricsExtension extends Extension {
     }
 
     disable() {
+        if (this._captureId) {
+            global.stage.disconnect(this._captureId);
+            this._captureId = 0;
+        }
+        this._drag = null;
         if (this._ownerWatcher) {
             Gio.bus_unwatch_name(this._ownerWatcher);
             this._ownerWatcher = null;
@@ -99,8 +104,11 @@ export default class SodamLyricsExtension extends Extension {
         this._info.add_child(this._cover);
         this._info.add_child(this._titleLabel);
         this._info.add_child(this._lyricLabel);
-        this._info.connect('button-press-event', () => {
-            this._openSodaM();
+        // 单击唤起主窗口；按住拖动则跟随指针，松手按离哪边近贴哪边。
+        this._info.connect('button-press-event', (actor, event) => {
+            if (event.get_button() !== 1)
+                return Clutter.EVENT_PROPAGATE;
+            this._beginDrag(event.get_coords()[0]);
             return Clutter.EVENT_STOP;
         });
 
@@ -136,6 +144,55 @@ export default class SodamLyricsExtension extends Extension {
         });
         button.connect('clicked', onClick);
         return button;
+    }
+
+    // ── 拖动吸附 ────────────────────────────────────────────────────────────
+
+    _beginDrag(startX) {
+        this._drag = {startX, moved: false, translation: 0};
+        this._captureId = global.stage.connect('captured-event', (stage, event) => {
+            if (!this._drag)
+                return Clutter.EVENT_PROPAGATE;
+            const type = event.type();
+            if (type === Clutter.EventType.MOTION) {
+                const dx = event.get_coords()[0] - this._drag.startX;
+                if (Math.abs(dx) > 6) {
+                    this._drag.moved = true;
+                    this._drag.translation = dx;
+                    this._indicator.translation_x = dx;
+                }
+                return this._drag.moved ? Clutter.EVENT_STOP : Clutter.EVENT_PROPAGATE;
+            }
+            if (type === Clutter.EventType.BUTTON_RELEASE) {
+                global.stage.disconnect(this._captureId);
+                this._captureId = 0;
+                const drag = this._drag;
+                this._drag = null;
+                this._indicator.translation_x = 0;
+                if (drag.moved)
+                    this._snap(drag.translation);
+                else
+                    this._openSodaM();
+                return Clutter.EVENT_STOP;
+            }
+            return Clutter.EVENT_PROPAGATE;
+        });
+    }
+
+    /// 松手后按距离屏幕左右边决定贴哪一侧的顶栏区域。
+    _snap(translation) {
+        const monitor = Main.layoutManager.primaryMonitor;
+        const [baseX] = this._indicator.get_transformed_position();
+        const centerX = baseX + translation + this._indicator.width / 2;
+        const toRight = centerX > monitor.x + monitor.width / 2;
+        const parent = this._indicator.get_parent();
+        if (parent)
+            parent.remove_child(this._indicator);
+        const panel = Main.panel;
+        if (toRight)
+            panel._rightBox.insert_child_at_index(this._indicator, 0);
+        else
+            panel._leftBox.insert_child_at_index(this._indicator, 1);
     }
 
     _openSodaM() {
