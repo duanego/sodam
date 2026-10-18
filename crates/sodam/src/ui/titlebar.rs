@@ -14,7 +14,9 @@
 //! macOS 走系统红绿灯，不使用本组件。
 
 use gpui::prelude::*;
-use gpui::{div, hsla, px, svg, Div, Hsla, MouseButton, Window, WindowControlArea};
+#[cfg(target_os = "linux")]
+use gpui::MouseButton;
+use gpui::{div, hsla, px, svg, Div, Hsla, Window, WindowControlArea};
 
 use crate::ui::{icons, theme};
 
@@ -31,12 +33,20 @@ const CLOSE_HOVER: Hsla = hsla(4.0 / 360.0, 0.83, 0.49, 1.0);
 /// 背景仍延伸到标题栏下方，避免独立标题栏横条与面板之间出现色差。
 /// 左侧全部为拖拽区，右侧是三个窗口控制按钮。
 pub fn render(window: &Window) -> Div {
-    // 最大化后按钮换成「还原」图标，和系统窗口的语义一致。
-    let maximize_icon = if window.is_maximized() {
+    render_with_maximize_icon(maximize_icon(window.is_maximized()))
+}
+
+/// 最大化后按钮换成「还原」图标，和系统窗口的语义一致。
+fn maximize_icon(is_maximized: bool) -> &'static str {
+    if is_maximized {
         "restore"
     } else {
         "square"
-    };
+    }
+}
+
+/// 与真实 `Window` 解耦：单测不必构造平台窗口，也能覆盖普通/最大化两条分支。
+fn render_with_maximize_icon(maximize_icon: &'static str) -> Div {
     div()
         .absolute()
         .top(px(0.0))
@@ -141,12 +151,23 @@ mod tests {
 
     #[test]
     fn titlebar_overlays_panel_backgrounds_without_its_own_fill() {
-        let mut titlebar = render();
+        let mut titlebar = render_with_maximize_icon(maximize_icon(false));
         let style = titlebar.style();
         assert_eq!(style.position, Some(gpui::Position::Absolute));
         assert_eq!(style.inset.top, Some(px(0.0).into()));
         assert_eq!(style.inset.left, Some(px(0.0).into()));
         assert_eq!(style.size.height, Some(px(STRIP_HEIGHT).into()));
         assert!(style.background.is_none());
+    }
+
+    #[test]
+    fn maximize_button_switches_to_restore_icon() {
+        assert_eq!(maximize_icon(false), "square");
+        assert_eq!(maximize_icon(true), "restore");
+        // 两条分支都必须能构建出同高度的覆盖层。
+        for icon in ["square", "restore"] {
+            let mut titlebar = render_with_maximize_icon(icon);
+            assert_eq!(titlebar.style().size.height, Some(px(STRIP_HEIGHT).into()));
+        }
     }
 }
