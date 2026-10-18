@@ -49,6 +49,7 @@
 - [ ] 播放模式 UI 完整化（当前队列内部状态已支持）
 - [ ] 音质标签和签名状态的更清楚提示
 - [ ] 歌词滚动微调与逐字动画一致性
+- [ ] 桌面歌词（独立悬浮窗）：GNOME/Mutter 不实现 `wlr-layer-shell`，原生 Wayland 客户端无法把窗口置顶，因此在 GNOME Wayland 下需要应用走 XWayland，或只在支持 layer-shell 的桌面（KDE Plasma / wlroots）落地
 - [ ] 队列拖拽排序
 
 ### 5. 平台与发布
