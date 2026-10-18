@@ -85,7 +85,8 @@ fn section_label(text: &str) -> impl IntoElement {
 }
 
 /// 渲染导航栏：点击切换 [`Root::nav`]。
-pub fn render(root: &Root, cx: &mut Context<Root>) -> impl IntoElement {
+/// `own_titlebar`：窗口使用客户端装饰时，内容需要为自绘标题栏让出高度。
+pub fn render(root: &Root, cx: &mut Context<Root>, own_titlebar: bool) -> impl IntoElement {
     let current = root.nav;
     let playing = current == Nav::Lyrics;
     let origin = root.queue_origin.clone();
@@ -167,7 +168,7 @@ pub fn render(root: &Root, cx: &mut Context<Root>) -> impl IntoElement {
         .when(cfg!(target_os = "macos"), |this| {
             this.pt(px(28.0 + theme::space::MD))
         })
-        .when(cfg!(target_os = "windows"), |this| {
+        .when(own_titlebar, |this| {
             this.pt(px(super::titlebar::STRIP_HEIGHT + theme::space::MD))
         })
         .gap(px(theme::space::XS))

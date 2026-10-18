@@ -130,6 +130,7 @@ icon_set!(
     "x",
     "minus",
     "square",
+    "restore",
     "disc-3",
     "check",
 );

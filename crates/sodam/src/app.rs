@@ -6,7 +6,9 @@ mod actions;
 mod search_actions;
 
 use gpui::prelude::*;
-use gpui::{div, px, Context, EntityInputHandler, FocusHandle, Render, UTF16Selection, Window};
+use gpui::{
+    div, px, Context, Decorations, EntityInputHandler, FocusHandle, Render, UTF16Selection, Window,
+};
 use sodam_core::{
     library::{RecommendationSource, SceneCard, SearchScope},
     login::{LoginStatus, QrMatrix},
@@ -884,6 +886,11 @@ impl Root {
 
 impl Render for Root {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Wayland 下 gpui 只能提供客户端装饰：系统不画标题栏，最小化/最大化/关闭
+        // 按钮必须应用自绘。X11 与 macOS 走服务端装饰，窗口管理器已经提供了标题栏，
+        // 再画一层会出现两套按钮。
+        let own_titlebar = cfg!(target_os = "windows")
+            || matches!(window.window_decorations(), Decorations::Client { .. });
         // 没有元素聚焦时把焦点收回根元素：gpui 的上下文栈取自聚焦节点的路径，
         // 空栈会让带谓词的快捷键绑定（播放三键）全部失效。
         if window.focused(cx).is_none() {
@@ -959,28 +966,26 @@ impl Render for Root {
                     .flex_row()
                     .flex_1()
                     .min_h(px(0.0))
-                    .child(ui::sidebar::render(self, cx))
+                    .child(ui::sidebar::render(self, cx, own_titlebar))
                     .child(
                         div()
                             .flex_1()
                             .min_w(px(0.0))
                             // macOS：让红绿灯悬浮在内容之上，内容整体下移 28px。
                             .when(cfg!(target_os = "macos"), |this| this.pt(px(28.0)))
-                            // Windows：只下移内容，根背景和侧栏仍铺到标题栏顶部。
-                            .when(cfg!(target_os = "windows"), |this| {
-                                this.pt(px(ui::titlebar::STRIP_HEIGHT))
-                            })
+                            // 自绘标题栏：只下移内容，根背景和侧栏仍铺到标题栏顶部。
+                            .when(own_titlebar, |this| this.pt(px(ui::titlebar::STRIP_HEIGHT)))
                             .child(views::render(self, window, cx)),
                     )
                     .when(self.queue_open && self.nav != Nav::Lyrics, |this| {
-                        this.child(ui::player_bar::queue_drawer(self, cx))
+                        this.child(ui::player_bar::queue_drawer(self, cx, own_titlebar))
                     }),
             )
             .child(ui::player_bar::render(self, cx))
             // 标题栏覆盖在各面板背景之上；不再单独占一行而截断侧栏底色。
             // 放在普通内容之后、弹层之前，控制按钮可点击，弹层仍能覆盖标题栏。
-            .when(cfg!(target_os = "windows"), |this| {
-                this.child(ui::titlebar::render())
+            .when(own_titlebar, |this| {
+                this.child(ui::titlebar::render(window))
             })
             .when(self.track_menu.is_some(), |this| {
                 this.child(crate::views::track_menu(self, cx))

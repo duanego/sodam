@@ -679,17 +679,23 @@ fn queue_section_row(title: &str) -> gpui::AnyElement {
 }
 
 /// 主界面的右侧队列抽屉。
-pub fn queue_drawer(root: &Root, cx: &mut Context<Root>) -> impl IntoElement {
-    queue_drawer_inner(root, cx, false)
+pub fn queue_drawer(root: &Root, cx: &mut Context<Root>, own_titlebar: bool) -> impl IntoElement {
+    queue_drawer_inner(root, cx, false, own_titlebar)
 }
 
 /// 歌词页内嵌队列：无侧边分割线，背景融入歌词页。
 pub fn queue_panel(root: &Root, cx: &mut Context<Root>) -> impl IntoElement {
-    queue_drawer_inner(root, cx, true)
+    // 内嵌面板不贴窗口顶部，不需要为标题栏让位。
+    queue_drawer_inner(root, cx, true, false)
 }
 
 /// 队列内容：主界面为 320px 抽屉；歌词页为无边界内嵌面板。
-fn queue_drawer_inner(root: &Root, cx: &mut Context<Root>, embedded: bool) -> impl IntoElement {
+fn queue_drawer_inner(
+    root: &Root,
+    cx: &mut Context<Root>,
+    embedded: bool,
+    own_titlebar: bool,
+) -> impl IntoElement {
     use std::sync::Arc;
 
     let language = root.language;
@@ -881,8 +887,8 @@ fn queue_drawer_inner(root: &Root, cx: &mut Context<Root>, embedded: bool) -> im
                 .bg(theme::bg())
                 .border_l_1()
                 .border_color(theme::border())
-                // 独立队列面板也铺到顶部，列表头避开 Windows 窗口按钮。
-                .when(cfg!(target_os = "windows"), |this| {
+                // 独立队列面板也铺到顶部，列表头避开自绘标题栏的窗口按钮。
+                .when(own_titlebar, |this| {
                     this.pt(px(super::titlebar::STRIP_HEIGHT))
                 })
         })
