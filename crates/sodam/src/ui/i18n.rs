@@ -295,7 +295,8 @@ impl Language {
             "音质已设为 {}，从下一首生效" => "Quality set to {}; applies from the next track",
             "音质：从下一首生效" => "Quality: applies from the next track",
             "已降档：所选 {}，实际 {}" => "Lower tier than selected: chose {}, got {}",
-            "降档" => "Lower",
+            "高于所选：所选 {}，实际 {}" => "Higher tier than selected: chose {}, got {}",
+            "不符" => "Mismatch",
             "不设上限，按账号权益和单曲可用档位取最高" => {
                 "No cap; uses the best tier your account and each track allow"
             }
@@ -491,8 +492,8 @@ impl Language {
             "将已有低档位缓存重新拉取为更高音质，失败不会损坏旧缓存" => {
                 "Re-fetch cached audio at a higher quality without affecting existing files on failure"
             }
-            "所有缓存歌曲均已达到或超过该档位" => {
-                "All cached songs are already at or above this quality"
+            "没有可升级的缓存歌曲：已达目标、无更高档位或当前缓存条件不支持升级" => {
+                "No cached songs to upgrade: already at the target, no higher quality available, or the cache does not support upgrading"
             }
             "{} 首歌曲可升级 · 预估流量 {} · 存储变化 {}" => {
                 "{} songs can be upgraded · Est. traffic {} · Storage change {}"
@@ -863,6 +864,9 @@ mod tests {
     }
 
     /// 英文界面的静态文案必须都能在词典里查到，否则会静默回退中文。
+    ///
+    /// `set_status` 也要扫：它就是「`localized` + 写状态行」，而状态行现在是切档、
+    /// 档位不符这类反馈的唯一去处（#82），漏在守卫外面等于英文界面随时会露出中文。
     #[test]
     fn every_static_ui_key_has_an_english_entry() {
         let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
@@ -881,6 +885,7 @@ mod tests {
             };
             let mut keys = literal_keys(&source, ".tr(");
             keys.extend(literal_keys(&source, ".localized("));
+            keys.extend(literal_keys(&source, ".set_status("));
             keys.extend(nth_argument_literal(&source, ".failure_text(", 2));
             for key in keys {
                 scanned += 1;

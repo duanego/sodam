@@ -4,8 +4,8 @@
 //! * 意图归一化——空串、空白、`auto` / `best` 都是「自动」，未知值也按不设上限处理
 //!   （与 libresoda 的 `preference_rank` 一致），免得用户手写一个错字就被锁进低档；
 //! * 缓存标签——同一个意图永远落到同一个文件名，`auto` 与空串共享 `auto`；
-//! * 降档判定——实际档位低于所选档位时为真；`auto` 永不降档，实际档位未知（旧缓存）
-//!   也不算降档。
+//! * 不符判定——实际档位**低于**或**高于**所选档位时都要说出来；`auto` 永不提示，
+//!   实际档位未知（旧缓存）也不提示。
 //!
 //! 这里的档位分数直接沿用 libresoda 的 [`quality_rank`] / [`preference_rank`]：
 //! 取流时的筛选就发生在那边，界面若另算一套，两边迟早会对同一个文件给出不同结论。
@@ -65,6 +65,9 @@ impl std::fmt::Display for QualitySource {
 
 /// 「自动」的存储写法。空串按它读，新写入一律写它。
 pub const AUTO: &str = "auto";
+
+/// 需要会员权益的档位分数下限（无损、杜比及更高）。
+pub const MEMBERSHIP_MIN_RANK: i64 = 88;
 
 /// 设置页与播放条共用的档位顺序（从高到低，也是菜单里的展示顺序）。
 ///
@@ -152,7 +155,8 @@ impl QualityIntent {
     /// 仅用于批量升级这类会消耗流量的操作预检；单个播放档位仍允许用户选择，
     /// 实际能不能拿到由服务端按账号权益与曲目可用性决定。
     pub fn requires_membership(&self) -> bool {
-        self.max_rank().is_some_and(|rank| rank >= 88)
+        self.max_rank()
+            .is_some_and(|rank| rank >= MEMBERSHIP_MIN_RANK)
     }
 
     /// 档位的稳定中文名（i18n 的 key）；认不出的档位返回 `None`，由调用方原样显示。
@@ -186,23 +190,51 @@ pub fn is_downgraded(intent: &QualityIntent, actual: Option<i64>) -> bool {
     actual < max
 }
 
-/// 是否值得向用户显示降档提示。
+/// 实际档位是否高于所选档位。
 ///
-/// 分数确实降了、但实际档位与所选档位落在同一个显示名时（例如所选「流畅」50、
-/// 实际 10/20 也显示「流畅」），照实说只会得到「所选 流畅，实际 流畅」。
-/// 这种提示读起来像没降档，干脆不显示；判定本身仍由 [`is_downgraded`] 负责，
-/// 不改变缓存升级等内部决策。
-pub fn is_visible_downgrade(intent: &QualityIntent, actual: Option<i64>) -> bool {
-    let Some(actual) = actual else {
+/// 这是 [`is_downgraded`] 的另一侧（issue #82）：取流先按上限过滤候选，**过滤后一条不剩
+/// 就退回全部候选**再取最优，于是「所选档位不在这条流的候选集里」会给出一条更高的档位。
+/// 试听片段最容易碰到——片段往往只下发少数几条流，且没有低于「流畅」的档位。
+///
+/// `actual` 缺失（旧缓存没有记录档位）时返回 `false`：不知道就不能断言。
+pub fn is_above_selected(intent: &QualityIntent, actual: Option<i64>) -> bool {
+    let (Some(max), Some(actual)) = (intent.max_rank(), actual) else {
         return false;
     };
-    if !is_downgraded(intent, Some(actual)) {
-        return false;
+    actual > max
+}
+
+/// 实际档位与所选意图不符的方向。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TierMismatch {
+    /// 实际低于所选：拿到的比要的差。
+    Below,
+    /// 实际高于所选：所选档位不在候选集里，服务端回了更高一档。
+    Above,
+}
+
+/// 是否值得向用户说明「实际与所选不符」，并给出方向。
+///
+/// 三个不说的条件：意图为「自动」（不设上限）、实际档位未知（旧缓存没有记录分数）、
+/// 以及两侧落在同一个显示名上——后者照实说只会得到「所选 流畅，实际 流畅」，
+/// 读起来像没不符。判定不落盘，每次现算：用户改了意图，旧结论就不该继续成立。
+///
+/// 徽章与状态行都只读这一个出处，两边共用同一套刻度与同一道显示名闸。
+pub fn visible_tier_mismatch(intent: &QualityIntent, actual: Option<i64>) -> Option<TierMismatch> {
+    let actual = actual?;
+    let direction = if is_downgraded(intent, Some(actual)) {
+        TierMismatch::Below
+    } else if is_above_selected(intent, Some(actual)) {
+        TierMismatch::Above
+    } else {
+        return None;
+    };
+    // 两侧同名（例如所选 50、实际 65 都显示「流畅」）就不说：照实读出来是
+    // 「所选 流畅，实际 流畅」，等于没说。
+    if intent.label_key() == Some(tier_label(actual)) {
+        return None;
     }
-    match intent.label_key() {
-        Some(selected) => selected != tier_label(actual),
-        None => true,
-    }
+    Some(direction)
 }
 
 /// 获取音质意图在给定账号 VIP 状态下的目标档位分数。
@@ -230,6 +262,18 @@ pub fn is_below_target(actual: Option<i64>, target: i64) -> bool {
     match actual {
         Some(rank) => rank < target,
         None => false,
+    }
+}
+
+/// 这个目标档位的「没有更高流」结论能否持久化。
+///
+/// 账号信息只有一个 VIP 布尔：低于会员门槛的档位无需权益，无损（100）能由 VIP 确认；
+/// 杜比与 Hi-Res 需要更高等级，布尔分不清，宁可下次再探，也不能把权益不足写成曲库没有。
+pub fn can_record_unavailable(target_rank: Option<i64>, is_vip: Option<bool>) -> bool {
+    match target_rank {
+        Some(rank) if rank < MEMBERSHIP_MIN_RANK => true,
+        Some(rank) if preference_rank("lossless") == Some(rank) => is_vip == Some(true),
+        _ => false,
     }
 }
 
@@ -412,25 +456,79 @@ mod tests {
         assert_eq!(QualityIntent::parse("standard").label_key(), Some("较高"));
     }
 
-    /// 降档提示按显示名去重：分数降了但显示名相同就不提示。
+    /// 四种判定：实际高于所选 / 等于 / 低于 / 意图为自动。
     ///
-    /// 合并 #85 的分数拆档后，表里已不存在「同名却判降档」的组合（50 分档叫流畅、
-    /// 更低分叫省流），所以真实降档都会提示；这条用例同时钉住「不降档不提示」与
-    /// 「显示名不同才提示」两个口径，将来改表时仍能抓住回归。
+    /// 「高于所选」不是降档：设置里选了上限，取流那一段却因为候选集里没有
+    /// 等于或低于上限的流而回退到全量，最终给出一条更高的档位（issue #82）。
     #[test]
-    fn visible_downgrade_follows_display_names() {
+    fn mismatch_reports_both_directions_but_never_auto() {
         let low = QualityIntent::parse("low");
+
+        // 实际高于所选：选「流畅」拿到 258k 的「较高」
+        let above = visible_tier_mismatch(&low, Some(70));
+        assert_eq!(above, Some(TierMismatch::Above));
+        assert!(is_above_selected(&low, Some(70)));
+        assert!(!is_downgraded(&low, Some(70)), "高于所选不能算降档");
+
+        // 实际等于所选
+        let equal = visible_tier_mismatch(&low, Some(50));
+        assert_eq!(equal, None);
+        assert!(!is_above_selected(&low, Some(50)));
+
+        // 实际低于所选
+        let below = visible_tier_mismatch(&low, Some(20));
+        assert_eq!(below, Some(TierMismatch::Below));
+
+        // 意图为自动：不设上限，任何实际档位都不提示
+        for actual in [0, 20, 50, 70, 100, 110] {
+            let auto = visible_tier_mismatch(&QualityIntent::Auto, Some(actual));
+            assert_eq!(auto, None, "自动不提示：实际 {actual}");
+            assert!(!is_above_selected(&QualityIntent::Auto, Some(actual)));
+        }
+
+        // 实际档位未知（旧缓存没有记录分数）：不知道就不能断言
+        let unknown = visible_tier_mismatch(&low, None);
+        assert_eq!(unknown, None);
+        assert!(!is_above_selected(&low, None));
+    }
+
+    /// 不符提示按显示名去重：分数不同但两侧同名就不提示。
+    ///
+    /// 抬档确实会撞名（50..70 都显示「流畅」），降档在 #85 拆档后不会（50 流畅、
+    /// 更低叫省流）。方向与「自动」的口径由 `mismatch_reports_both_directions_but_never_auto`
+    /// 负责，这里只钉显示名这一道闸。
+    #[test]
+    fn visible_mismatch_follows_display_names() {
+        assert_eq!(tier_label(65), "流畅");
+        let saver = QualityIntent::parse("128k");
+        assert!(is_above_selected(&saver, Some(65)), "65 高于所选上限 50");
+        let same_label = visible_tier_mismatch(&saver, Some(65));
+        assert_eq!(same_label, None, "所选与实际同名就不提示");
+
+        // 显示名不同就提示：所选 较高(70)，实际 流畅(50)
         let medium = QualityIntent::parse("medium");
-        assert!(!is_visible_downgrade(&low, Some(50)), "同分不算降档");
-        assert_eq!(tier_label(20), "省流");
-        assert!(
-            is_visible_downgrade(&low, Some(20)),
-            "流畅 ≠ 省流，应当提示"
-        );
-        assert!(is_visible_downgrade(&medium, Some(50)));
-        assert!(!is_visible_downgrade(&medium, None));
-        assert!(!is_visible_downgrade(&QualityIntent::Auto, Some(10)));
-        assert!(is_downgraded(&low, Some(20)), "内部降档判定保持不变");
+        let medium_to_low = visible_tier_mismatch(&medium, Some(50));
+        assert_eq!(medium_to_low, Some(TierMismatch::Below));
+    }
+
+    /// 每一档在实际档位明显更高时都要报「高于所选」。
+    ///
+    /// 认不出的意图不设上限、因此从不报，这条已由
+    /// `normalizes_empty_auto_and_unknown` 钉住，不在这里重复。
+    #[test]
+    fn every_tier_reports_above_when_a_much_higher_stream_is_delivered() {
+        for tier in TIERS {
+            let intent = QualityIntent::parse(tier);
+            let cap = intent.max_rank().expect("菜单档位必须有分数");
+            // Hi-Res 无损 是菜单里的最高档，没有比它更高的实际档位
+            if cap >= 110 {
+                continue;
+            }
+            let above = visible_tier_mismatch(&intent, Some(110));
+            assert_eq!(above, Some(TierMismatch::Above), "所选 {tier} 拿到 Hi-Res");
+            // 高于所选绝不算降档
+            assert!(!is_downgraded(&intent, Some(110)));
+        }
     }
 
     /// 菜单里的每一档都必须同时有分数与显示名，否则会出现能选却显示不出名字的档位。
@@ -542,6 +640,21 @@ mod tests {
         }
         assert!(!QualityIntent::Auto.requires_membership());
         assert!(!QualityIntent::parse("ultra").requires_membership());
+    }
+
+    /// 负结果只在能确认账号权益时落盘：非会员档位无需权益，无损需要 VIP，
+    /// 更高档位无法由一个布尔确认，宁可下次再探。
+    #[test]
+    fn unavailable_results_only_recorded_with_confirmed_entitlement() {
+        assert!(can_record_unavailable(Some(50), None));
+        assert!(can_record_unavailable(Some(80), Some(false)));
+        assert!(can_record_unavailable(Some(100), Some(true)));
+        assert!(!can_record_unavailable(Some(100), Some(false)));
+        assert!(!can_record_unavailable(Some(100), None));
+        // Hi-Res 与杜比需要更高等级，VIP 布尔分不清，不写负结果。
+        assert!(!can_record_unavailable(Some(110), Some(true)));
+        assert!(!can_record_unavailable(Some(88), Some(true)));
+        assert!(!can_record_unavailable(None, Some(true)));
     }
 
     /// 显示名与降档判定必须同源：真实流样本上，徽章写的档位就是判定用的那一档。
