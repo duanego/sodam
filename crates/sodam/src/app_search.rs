@@ -1,5 +1,6 @@
 //! 搜索、音乐人和专辑详情相关动作。
 
+use super::{REMOTE_TEXT, RETRY_TEXT, SAVE_TEXT};
 use gpui::prelude::*;
 use gpui::Context;
 use sodam_core::library::SearchScope;
@@ -11,9 +12,107 @@ use std::sync::Arc;
 use super::{Nav, Root};
 
 impl Root {
+    /// 联想项点击：有歌单实体就直接进歌单，否则按文本搜索。
+    pub fn apply_search_suggestion(
+        &mut self,
+        item: sodam_core::library::SearchSuggestion,
+        cx: &mut Context<Self>,
+    ) {
+        self.search_sug_open = false;
+        if let Some(playlist_id) = item.playlist_id {
+            self.open_playlist(playlist_id, None, cx);
+        } else {
+            self.run_history_search(item.text, cx);
+        }
+    }
+
+    pub fn run_history_search(&mut self, query: String, cx: &mut Context<Self>) {
+        self.search_field.set_text(query);
+        self.search_field.set_caret(self.search_field.len());
+        self.search_sug_open = false;
+        self.search_sug_index = 0;
+        self.run_search(cx);
+    }
+
+    pub fn remove_search_history(&mut self, index: usize, cx: &mut Context<Self>) {
+        if self.settings.remove_search_history(index) {
+            let _ = self.settings.save();
+        }
+        cx.notify();
+    }
+
+    pub fn clear_search_history(&mut self, cx: &mut Context<Self>) {
+        self.settings.clear_search_history();
+        match self.settings.save() {
+            Ok(()) => self.set_status_text(self.tr("搜索历史已清空")),
+            Err(err) => {
+                self.notify_error_once(
+                    "search-history-save-failed",
+                    self.failure_text("清空搜索历史失败", &err, RETRY_TEXT),
+                );
+            }
+        }
+        cx.notify();
+    }
+
+    pub fn toggle_search_history(&mut self, cx: &mut Context<Self>) {
+        let enabled = !self.settings.search_history_is_enabled();
+        self.settings.set_search_history_enabled(enabled);
+        match self.settings.save() {
+            Ok(()) => {
+                let status = self
+                    .tr(if enabled {
+                        "搜索历史已开启"
+                    } else {
+                        "搜索历史已关闭，记录已清空"
+                    })
+                    .to_string();
+                self.set_status_text(status);
+            }
+            Err(err) => {
+                self.notify_error_once(
+                    "search-history-save-failed",
+                    self.failure_text("保存搜索历史设置失败", &err, SAVE_TEXT),
+                );
+            }
+        }
+        cx.notify();
+    }
+
     /// 触发搜索：网络调用放在 GPUI 的后台执行器上，结果回灌后 `notify` 重绘。
+    /// 输入变化时拉联想词：序号校验保证只有最后一次请求会写回。
+    pub(crate) fn schedule_search_suggest(&mut self, cx: &mut Context<Self>) {
+        let query = self.search_field.text().trim().to_string();
+        self.search_sug_seq += 1;
+        let seq = self.search_sug_seq;
+        if query.is_empty() {
+            self.search_sug.clear();
+            self.search_sug_open = false;
+            return;
+        }
+        let settings = self.settings.clone();
+        let work = cx.background_spawn(async move {
+            let session = Session::new(settings);
+            sodam_core::library::search_suggest(&session, &query).unwrap_or_default()
+        });
+        cx.spawn(async move |this, cx| {
+            let words = work.await;
+            let _ = this.update(cx, |root, cx| {
+                if root.search_sug_seq != seq {
+                    return;
+                }
+                root.search_sug = words;
+                root.search_sug_index = 0;
+                root.search_sug_open = !root.search_sug.is_empty();
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     pub fn run_search(&mut self, cx: &mut Context<Self>) {
-        let keyword = self.search_input.trim().to_string();
+        self.search_sug_open = false;
+        let keyword = self.search_field.text().trim().to_string();
         if keyword.is_empty() {
             self.set_status("先输入关键词再回车", &[]);
             cx.notify();
@@ -22,11 +121,18 @@ impl Root {
         if self.searching {
             return;
         }
+        // 顶栏搜索是全局入口：提交后要切到搜索结果页，不能只留一条状态提示。
+        if self.nav != Nav::Search {
+            self.set_nav(Nav::Search, cx);
+        }
+        if self.settings.record_search(&keyword) {
+            let _ = self.settings.save();
+        }
         let scope = self.search_tab;
         let settings = self.settings.clone();
         self.searching = true;
         self.search_keyword = keyword.clone();
-        self.status = self.localized("正在搜索「{}」…", std::slice::from_ref(&keyword));
+        self.set_status_text(self.localized("正在搜索「{}」…", std::slice::from_ref(&keyword)));
         cx.notify();
 
         let work_keyword = keyword.clone();
@@ -39,13 +145,14 @@ impl Root {
                 root.searching = false;
                 match result {
                     Ok(results) => {
-                        root.status = root.localized(
+                        let message = root.localized(
                             "「{}」共 {} 条结果",
                             &[
                                 results.keyword.to_string(),
                                 results.total_count().to_string(),
                             ],
                         );
+                        root.set_status_text(message);
                         root.results = Arc::new(results.all_tracks());
                         root.search_results = results;
                         let covers: Vec<String> = root
@@ -75,7 +182,8 @@ impl Root {
                         root.ensure_covers(&covers, cx);
                     }
                     Err(err) => {
-                        root.status = root.localized("搜索失败：{err}", &[err.to_string()]);
+                        let message = root.failure_text("搜索失败", &err, REMOTE_TEXT);
+                        root.notify_error_once("search-failed", message);
                         root.results = Arc::new(Vec::new());
                         root.search_results = SearchResults {
                             keyword,
@@ -95,7 +203,7 @@ impl Root {
             return;
         }
         self.search_tab = tab;
-        if self.search_input.trim().is_empty() {
+        if self.search_field.text().trim().is_empty() {
             cx.notify();
         } else {
             self.run_search(cx);
@@ -146,7 +254,8 @@ impl Root {
                         root.set_status("音乐人已加载", &[]);
                     }
                     Err(err) => {
-                        root.status = root.localized("读取音乐人失败：{err}", &[err.to_string()])
+                        let message = root.failure_text("读取音乐人失败", &err, REMOTE_TEXT);
+                        root.notify_error_once("artist-load-failed", message);
                     }
                 }
                 cx.notify();
@@ -232,8 +341,9 @@ impl Root {
                         root.set_status("音乐人歌曲已加载", &[]);
                     }
                     Err(err) => {
-                        root.status =
-                            root.localized("加载更多音乐人歌曲失败：{err}", &[err.to_string()])
+                        let message =
+                            root.failure_text("加载更多音乐人歌曲失败", &err, REMOTE_TEXT);
+                        root.notify_warning_once("artist-more-failed", message);
                     }
                 }
                 cx.notify();
@@ -248,12 +358,17 @@ impl Root {
         track: sodam_core::models::TrackItem,
         cx: &mut Context<Self>,
     ) {
-        if track.album_id.is_empty() {
+        let album_id = if track.album_id.is_empty() {
+            self.album_ids.get(&track.id).cloned().unwrap_or_default()
+        } else {
+            track.album_id.clone()
+        };
+        if album_id.is_empty() {
             return;
         }
         self.open_album_page(
             AlbumItem {
-                id: track.album_id,
+                id: album_id,
                 title: track.album,
                 cover: track.cover,
                 ..Default::default()
@@ -268,12 +383,17 @@ impl Root {
         track: sodam_core::models::TrackItem,
         cx: &mut Context<Self>,
     ) {
-        if track.artist_id.is_empty() {
+        let artist_id = if track.artist_id.is_empty() {
+            self.artist_ids.get(&track.id).cloned().unwrap_or_default()
+        } else {
+            track.artist_id.clone()
+        };
+        if artist_id.is_empty() {
             return;
         }
         self.open_artist_page(
             ArtistItem {
-                id: track.artist_id,
+                id: artist_id,
                 name: track.artist,
                 ..Default::default()
             },
@@ -314,10 +434,12 @@ impl Root {
                         root.ensure_covers(&covers, cx);
                         root.open_album = Some(detail);
                         root.album_detail_list.reset(track_count + 1);
-                        root.status = root.localized("专辑共 {} 首", &[track_count.to_string()]);
+                        let message = root.localized("专辑共 {} 首", &[track_count.to_string()]);
+                        root.set_status_text(message);
                     }
                     Err(err) => {
-                        root.status = root.localized("读取专辑失败：{err}", &[err.to_string()])
+                        let message = root.failure_text("读取专辑失败", &err, REMOTE_TEXT);
+                        root.notify_error_once("album-load-failed", message);
                     }
                 }
                 cx.notify();

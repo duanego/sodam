@@ -9,11 +9,16 @@ use gpui::{div, img, px, svg, AnyElement, ClickEvent, Context, IntoElement};
 use crate::app::{Nav, Root};
 use crate::ui::{icons, theme};
 
+fn current_logged_in(root: &Root) -> bool {
+    !root.settings.cookie.trim().is_empty()
+}
+
 /// 导航项的图标名（Lucide 线性图标）。
 fn icon_name(nav: Nav) -> &'static str {
     match nav {
         Nav::Home => "house",
         Nav::Scenes => "radio",
+        Nav::Me => "user",
         Nav::Search => "search",
         Nav::Liked => "heart",
         Nav::Library => "list-music",
@@ -85,7 +90,8 @@ fn section_label(text: &str) -> impl IntoElement {
 }
 
 /// 渲染导航栏：点击切换 [`Root::nav`]。
-pub fn render(root: &Root, cx: &mut Context<Root>) -> impl IntoElement {
+/// `own_titlebar`：窗口使用客户端装饰时，内容需要为自绘标题栏让出高度。
+pub fn render(root: &Root, cx: &mut Context<Root>, own_titlebar: bool) -> impl IntoElement {
     let current = root.nav;
     let playing = current == Nav::Lyrics;
     let origin = root.queue_origin.clone();
@@ -148,10 +154,16 @@ pub fn render(root: &Root, cx: &mut Context<Root>) -> impl IntoElement {
             nav_row(nav, labels[&nav].clone(), active, cx)
         })
         .collect();
-    let footer_items: Vec<AnyElement> = [Nav::Settings]
-        .into_iter()
-        .map(|nav| nav_row(nav, labels[&nav].clone(), nav == current, cx))
-        .collect();
+    // 登录后设置入口只在头像菜单里，主界面不再放设置按钮；
+    // 未登录时保留，作为扫码登录的入口。
+    let footer_items: Vec<AnyElement> = if current_logged_in(root) {
+        Vec::new()
+    } else {
+        [Nav::Settings]
+            .into_iter()
+            .map(|nav| nav_row(nav, labels[&nav].clone(), nav == current, cx))
+            .collect()
+    };
 
     div()
         .flex()
@@ -167,7 +179,7 @@ pub fn render(root: &Root, cx: &mut Context<Root>) -> impl IntoElement {
         .when(cfg!(target_os = "macos"), |this| {
             this.pt(px(28.0 + theme::space::MD))
         })
-        .when(cfg!(target_os = "windows"), |this| {
+        .when(own_titlebar, |this| {
             this.pt(px(super::titlebar::STRIP_HEIGHT + theme::space::MD))
         })
         .gap(px(theme::space::XS))
